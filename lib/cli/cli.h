@@ -28,7 +28,9 @@
 #include <cli_help.h>
 #include <cli_history.h>
 #include <cli_map.h>
-
+#ifdef CONFIG_TELNET_CLI
+#include <cli_telnet.h>
+#endif
 #include <rte_string_fns.h>
 
 #ifdef __cplusplus
@@ -430,7 +432,7 @@ cli_usage(void)
 	if (this_cli && this_cli->exe_node) {
 		const char *p = this_cli->exe_node->short_desc;
 
-		cli_printf("  Usage: %s\n", (p) ? p : "No description found");
+		cli_printf("  Usage: %s\r\n", (p) ? p : "No description found");
 	}
 	return -1;
 }
@@ -925,6 +927,17 @@ cli_quit(void)
 {
 	this_cli->quit_flag = 1;
 }
+
+#ifdef CONFIG_TELNET_CLI
+static inline void
+cli_close_telnet_fd(void)
+{
+	close(this_scrn->fd_in);
+	this_scrn->fd_in = -1;
+	this_scrn->fd_out = -1;
+}
+#endif
+
 
 void cli_set_lua_callback( int(*func)(void *, const char *));
 

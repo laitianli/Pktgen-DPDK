@@ -16,7 +16,11 @@ RTE_TARGET ?= x86_64-native-linux-gcc
 include $(RTE_SDK)/mk/rte.vars.mk
 
 # binary name
+ifdef CONFIG_TELNET_CLI
+APP = pktgen-telnet
+else
 APP = pktgen
+endif
 
 VER := $(shell cat $(RTE_SRCDIR)/../VERSION | \
 	sed -e 's/-rc/.-rc/' -e 's/$$/..99/' | \

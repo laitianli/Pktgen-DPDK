@@ -39,11 +39,11 @@ _show_help_lines(const char **h, int allow_pause)
 
 	for (j = 0; h[j] != NULL; j++) {
 		if (strcmp(h[j], CLI_HELP_PAUSE)) {
-			cli_printf("%s\n", h[j]);
+			cli_printf("%s\r\n", h[j]);
 			continue;
 		}
 		if (allow_pause) {
-			key = cli_pause("\n  Return to Continue or ESC:", NULL);
+			key = cli_pause("\r\n  Return to Continue or ESC:", NULL);
 			if ((key == vt100_escape) ||
 			    (key == 'q') || (key == 'Q'))
 				return -1;

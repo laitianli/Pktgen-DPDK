@@ -44,7 +44,9 @@ SRCS-y +=  cli_search.c
 SRCS-y +=  cli_cmap.c
 SRCS-y +=  cli_vt100.c
 SRCS-y +=  cli_scrn.c
-
+ifdef CONFIG_TELNET_CLI
+SRCS-y +=  cli_telnet.c
+endif
 # install includes
 SYMLINK-y-include += cli.h
 SYMLINK-y-include += cli_input.h

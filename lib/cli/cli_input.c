@@ -80,7 +80,7 @@ cli_poll(char *c)
 {
 	struct pollfd fds;
 
-	fds.fd      = fileno(this_scrn->fd_in);
+	fds.fd      = this_scrn->fd_in;
 	fds.events  = POLLIN;
 	fds.revents = 0;
 
@@ -95,8 +95,14 @@ cli_poll(char *c)
 				if (n > 0)
 					return 1;
 			}
-		} else
+		} else {
+#ifdef CONFIG_TELNET_CLI
+			close(this_scrn->fd_in);
+			this_scrn->fd_in = -1;
+			this_scrn->fd_out = -1;
+#endif
 			cli_quit();
+		}
 	}
 	return 0;
 }

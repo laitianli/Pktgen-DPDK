@@ -144,8 +144,8 @@ struct cli_scrn {
 	uint16_t        theme;      /**< Current theme state on or off */
 	uint16_t 	type;       /**< screen I/O type */
 	struct termios oldterm;     /**< Old terminal setup information */
-	FILE *fd_out;               /**< File descriptor for output */
-	FILE *fd_in;                /**< File descriptor for input */
+	int fd_out;               /**< File descriptor for output */
+	int fd_in;                /**< File descriptor for input  */
 };
 
 /** A single byte to hold port of a Red/Green/Blue color value */
@@ -193,7 +193,7 @@ scrn_write(const void *str, int len)
 	if (len <= 0)
 		len = strlen(str);
 
-	if (write(fileno(this_scrn->fd_out), str, len) != len)
+	if ((this_scrn->fd_out >= 0) && (write(this_scrn->fd_out, str, len) != len))
 		fprintf(stderr, "%s: Write failed\n", __func__);
 
 	return len;
@@ -208,7 +208,7 @@ scrn_read(char *buf, int len)
 		return 0;
 
 	while(len--)
-		n += read(fileno(this_scrn->fd_in), buf++, 1);
+		n += read((this_scrn->fd_in), buf++, 1);
 	return n;
 }
 
@@ -217,19 +217,23 @@ __attribute__((format(printf, 1, 2)))
 scrn_puts(const char *fmt, ...)
 {
 	struct cli_scrn *scrn = this_scrn;
-	FILE * f;
 	va_list vaList;
-
-	f = (!scrn || !scrn->fd_out)? stdout : scrn->fd_out;
+	if (!scrn)
+		return;
+	int f = (!scrn)? fileno(stdout) : scrn->fd_out;
 	va_start(vaList, fmt);
-	vfprintf(f, fmt, vaList);
+	vdprintf(f, fmt, vaList);
 	va_end(vaList);
-	fflush(f);
+	fsync(f);
 }
 
 void scrn_cprintf(int16_t r, int16_t ncols, const char *fmt, ...);
 void scrn_printf(int16_t r, int16_t c, const char *fmt, ...);
+#if 1
+void scrn_fprintf(int16_t r, int16_t c, int fd, const char *fmt, ...);
+#else
 void scrn_fprintf(int16_t r, int16_t c, FILE *f, const char *fmt, ...);
+#endif
 
 #define _s(_x, _y)	static __inline__ void _x { _y; }
 

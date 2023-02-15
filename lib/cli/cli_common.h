@@ -49,10 +49,10 @@ cli_printf(const char *fmt, ...)
     int n;
 
     va_start(vaList, fmt);
-    n = vfprintf(this_scrn->fd_out, fmt, vaList);
+    n = vdprintf(this_scrn->fd_out, fmt, vaList);
     va_end(vaList);
 
-    fflush(this_scrn->fd_out);
+    fsync(this_scrn->fd_out);
 
     return n;
 }

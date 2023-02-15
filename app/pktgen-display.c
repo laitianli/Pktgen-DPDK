@@ -158,8 +158,10 @@ display_dashline(int last_row)
 	last_row--;
 	scrn_pos(last_row, 1);
 	pktgen_display_set_color("sep.dash");
-	for (i = 0; i < 79; i++)
-		scrn_fprintf(0, 0, stdout, "-");
+	for (i = 0; i < 79; i++) {
+		//scrn_fprintf(0, 0, stdout, "-");
+		scrn_fprintf(0, 0, this_scrn->fd_out, "-");
+	}
 	pktgen_display_set_color("sep.text");
 	scrn_printf(last_row, 3, " %s ", pktgen_version());
 	pktgen_display_set_color("top.poweredby");

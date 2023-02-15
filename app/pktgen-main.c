@@ -23,6 +23,11 @@
 #include "pktgen-display.h"
 #include "pktgen-log.h"
 #include "cli-functions.h"
+#ifdef CONFIG_TELNET_CLI
+#include <semaphore.h>
+sem_t telnet_sem;
+static char* g_cmd_file = NULL;
+#endif
 
 #ifdef GUI
 int pktgen_gui_main(int argc, char *argv[]);
@@ -192,7 +197,11 @@ pktgen_parse_args(int argc, char **argv)
 			break;
 
 		case 'f':	/* Command file or Lua script. */
+#ifdef CONFIG_TELNET_CLI
+			g_cmd_file = strdup(optarg);
+#else
 			cli_add_cmdfile(optarg);
+#endif
 			break;
 
 		case 'l':	/* Log file */
@@ -366,6 +375,66 @@ RTE_FINI(pktgen_fini)
 	cli_destroy();
 }
 
+static int init_cli(void)
+{
+	scrn_setw(1);	/* Reset the window size, from possible crash run. */
+	scrn_pos(100, 1);	/* Move the cursor to the bottom of the screen again */
+
+	if (pktgen_cli_create())
+		return -1;
+
+	lua_newlib_add(pktgen_lua_openlib, 0);
+
+	/* Open the Lua script handler. */
+	if ( (pktgen.ld = lua_create_instance()) == NULL) {
+		pktgen_log_error("Failed to open Lua pktgen support library");
+		return -1;
+	}
+	cli_set_lua_callback(pktgen_lua_dofile);
+	cli_set_user_state(pktgen.ld);
+	scrn_create_with_defaults(pktgen.flags & ENABLE_THEME_FLAG);
+	rte_delay_us_sleep(100 * 1000);	/* Wait a bit for things to settle. */
+	/* Disable printing log messages of level info and below to screen, */
+	/* erase the screen and start updating the screen again. */
+	pktgen_log_set_screen_level(LOG_LEVEL_WARNING);
+	scrn_erase(this_scrn->nrows);
+
+	scrn_resume();
+
+	pktgen_clear_display();
+
+	pktgen_log_info("=== Timer Setup\n");
+	rte_timer_setup();
+	return 0;
+}
+
+static void start_cli(void)
+{
+	pktgen_log_info("=== Run CLI\n");
+	pktgen_cli_start();
+}
+
+static void stop_cli(void)
+{
+	lua_execute_close(pktgen.ld);
+	scrn_pause();
+	scrn_setw(1);
+	scrn_printf(100, 1, "\n");	/* Put the cursor on the last row and do a newline. */
+	scrn_destroy();
+	cli_destroy();
+}
+
+static void restart_cli(void)
+{
+	init_cli();
+#ifdef CONFIG_TELNET_CLI
+	if (g_cmd_file)
+		cli_add_cmdfile(g_cmd_file);
+#endif
+	start_cli();
+	stop_cli();
+}
+
 /**************************************************************************//**
  *
  * main - Main routine to setup pktgen.
@@ -388,9 +457,6 @@ main(int argc, char **argv)
 	signal(SIGHUP, sig_handler);
 	signal(SIGINT, sig_handler);
 	signal(SIGPIPE, sig_handler);
-
-	scrn_setw(1);	/* Reset the window size, from possible crash run. */
-	scrn_pos(100, 1);	/* Move the cursor to the bottom of the screen again */
 
 	printf("\n%s %s\n", copyright_msg(), powered_by());
 	fflush(stdout);
@@ -426,39 +492,20 @@ main(int argc, char **argv)
 	argc -= ret;
 	argv += ret;
 
-	if (pktgen_cli_create())
-		return -1;
-
-	lua_newlib_add(pktgen_lua_openlib, 0);
-
-	/* Open the Lua script handler. */
-	if ( (pktgen.ld = lua_create_instance()) == NULL) {
-		pktgen_log_error("Failed to open Lua pktgen support library");
-		return -1;
-	}
-	cli_set_lua_callback(pktgen_lua_dofile);
-	cli_set_user_state(pktgen.ld);
-
 	/* parse application arguments (after the EAL ones) */
 	ret = pktgen_parse_args(argc, argv);
 	if (ret < 0)
 		return -1;
-
 	i = rte_get_master_lcore();
 	if (get_lcore_rxcnt(pktgen.l2p, i) || get_lcore_txcnt(pktgen.l2p, i)) {
-		cli_printf("*** Error can not use master lcore for a port\n");
-		cli_printf("    The master lcore is %d\n", rte_get_master_lcore());
+		printf("*** Error can not use master lcore for a port\n");
+		printf("    The master lcore is %d\n", rte_get_master_lcore());
 		exit(-1);
 	}
 
 	pktgen.hz = rte_get_timer_hz();	/* Get the starting HZ value. */
 
-	scrn_create_with_defaults(pktgen.flags & ENABLE_THEME_FLAG);
-
-	rte_delay_us_sleep(100 * 1000);	/* Wait a bit for things to settle. */
-
 	print_copyright(PKTGEN_VER_PREFIX, PKTGEN_VER_CREATED_BY);
-
 	if (pktgen.verbose)
 		pktgen_log_info(
 			">>> Packet Burst %d, RX Desc %d, TX Desc %d, mbufs/port %d, mbuf cache %d",
@@ -482,64 +529,38 @@ main(int argc, char **argv)
 		pktgen_log_error("Failed to start lcore %d, return %d", i, ret);
 
 	rte_delay_us_sleep(250000);	/* Wait for the lcores to start up. */
-
-	/* Disable printing log messages of level info and below to screen, */
-	/* erase the screen and start updating the screen again. */
-	pktgen_log_set_screen_level(LOG_LEVEL_WARNING);
-	scrn_erase(this_scrn->nrows);
-
-	scrn_resume();
-
-	pktgen_clear_display();
-
-	pktgen_log_info("=== Timer Setup\n");
-	rte_timer_setup();
-
 	pktgen_log_info("=== After Timer Setup\n");
 
-	if (pktgen.flags & ENABLE_GUI_FLAG) {
-		if (!scrn_is_paused() ) {
-			scrn_pause();
-			scrn_cls();
-			scrn_setw(1);
-			scrn_pos(this_scrn->nrows, 1);
-		}
-
-		pktgen.ld_sock = lua_create_instance();
-
-		lua_start_socket(pktgen.ld_sock,
-				&pktgen.thread,
-				pktgen.hostname,
-				pktgen.socket_port);
-#ifdef GUI
-		pktgen_gui_main(argc, argv);
-#endif
+#ifndef CONFIG_TELNET_CLI
+	restart_cli();
+#else
+	printf("\n>===============show main page,run cmd=======================<\n");
+	printf(">------------------ [ telnet 0 9988 ] -----------------------<\n");
+	printf(">============================================================<\n\n");
+	int sem_ret = sem_init(&telnet_sem, 0, 0);
+	if (sem_ret) {
+		printf("[Error] create sem failed\n");
 	}
-
-	pktgen_log_info("=== Run CLI\n");
-	pktgen_cli_start();
-
-	lua_execute_close(pktgen.ld);
-
+	cli_telnet_server_start(&telnet_sem);
+	while(get_telnet_server_status()) {
+		printf("[Note] wait telnet client connect...\n");
+		sem_wait(&telnet_sem);
+		if (!get_telnet_server_status())
+			break;
+		printf("[Note] new telnet client connect, so restart cli...\n");
+		restart_cli();
+	}
+	sem_destroy(&telnet_sem);
+#endif
 	pktgen_stop_running();
-
-	scrn_pause();
-
-	scrn_setw(1);
-	scrn_printf(100, 1, "\n");	/* Put the cursor on the last row and do a newline. */
-	scrn_destroy();
 
 	/* Wait for all of the cores to stop running and exit. */
 	rte_eal_mp_wait_lcore();
-
 	RTE_ETH_FOREACH_DEV(i) {
 		rte_eth_dev_stop(i);
 		rte_delay_us_sleep(100 * 1000);
 		rte_eth_dev_close(i);
 	}
-
-	cli_destroy();
-
 	return 0;
 }
 

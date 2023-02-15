@@ -1558,7 +1558,7 @@ static void *
 _timer_thread(void *arg)
 {
 	uint64_t process, page, process_timo, page_timo;
-
+	pthread_setname_np(pthread_self(), "timer");
 	this_scrn = arg;
 
 	process_timo = pktgen.hz;

@@ -238,6 +238,6 @@ cli_history_dump(void)
 		return;
 
 	CIRCLEQ_FOREACH(h, &cli->hd_hist, next) {
-		cli_printf("%4d: %s\n", i++, h->line);
+		cli_printf("%4d: %s\r\n", i++, h->line);
 	}
 }

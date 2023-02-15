@@ -36,9 +36,9 @@ scrn_printf(int16_t r, int16_t c, const char *fmt, ...)
 		if ( (r != 0) && (c != 0) )
 			scrn_pos(r, c);
 		va_start(vaList, fmt);
-		vfprintf(this_scrn->fd_out, fmt, vaList);
+		vdprintf(this_scrn->fd_out, fmt, vaList);
 		va_end(vaList);
-		fflush(this_scrn->fd_out);
+		fsync(this_scrn->fd_out);
 	}
 }
 
@@ -59,7 +59,7 @@ scrn_cprintf(int16_t r, int16_t ncols, const char *fmt, ...)
 	scrn_pos(r, scrn_center_col(ncols, str));
 	scrn_puts("%s", str);
 }
-
+#if 0
 void
 __attribute__((format(printf, 4, 5)))
 scrn_fprintf(int16_t r, int16_t c, FILE *f, const char *fmt, ...)
@@ -73,49 +73,99 @@ scrn_fprintf(int16_t r, int16_t c, FILE *f, const char *fmt, ...)
 	va_end(vaList);
 	fflush(f);
 }
+#else
+void
+__attribute__((format(printf, 4, 5)))
+scrn_fprintf(int16_t r, int16_t c, int fd, const char *fmt, ...)
+{
+	va_list vaList;
+
+	if ( (r != 0) && (c != 0) )
+		scrn_pos(r, c);
+	va_start(vaList, fmt);
+	vdprintf(fd, fmt, vaList);
+	va_end(vaList);
+	fsync(fd);
+}
+
+#endif
 
 static void
-scrn_set_io(FILE *in, FILE *out)
+scrn_set_io(int in, int out)
 {
 	struct cli_scrn *scrn = this_scrn;
 
 	if (scrn) {
-		if (scrn->fd_in && (scrn->fd_in != stdin))
-			fclose(scrn->fd_in);
-
-		if (scrn->fd_out && (scrn->fd_out != stdout))
-			fclose(scrn->fd_in);
-
 		scrn->fd_in = in;
 		scrn->fd_out = out;
 	}
 }
+#ifdef CONFIG_TELNET_CLI
+#include "cli_telnet.h"
+static void sendstr(int fd, const char *s)
+{
+	send(fd, s, strlen(s), 0);
+}
+
+static void sendcrlf(int fd)
+{
+	sendstr(fd, "\r\n> ");
+}
+
+static void cli_send_welcome_banner(int fd)
+{
+	char sendbuf[512];
+	sprintf(sendbuf,
+		"\r\n"
+		"--==--==--==--==--==--==--==--==--==--==--\r\n"
+		"------ WELCOME to DPDK-Pktgen CLI ------\r\n"
+		"--==--==--==--==--==--==--==--==--==--==--\r\n"
+		);
+	sendstr(fd, sendbuf);
+	sendcrlf(fd);
+}
+
+static char telnet_echo_off[] = {
+	0xff, 0xfb, 0x01, /* IAC WILL ECHO */
+	0xff, 0xfb, 0x03, /* IAC WILL SUPPRESS_GO_AHEAD */
+	0xff, 0xfd, 0x03, /* IAC DO SUPPRESS_GO_AHEAD */
+};
+
+static void cli_sa_accept(int fd)
+{
+	send(fd, telnet_echo_off, sizeof(telnet_echo_off), 0);
+	printf("[Note] new sock %d opened\r\n", fd);
+}
+#endif
 
 static int
 scrn_stdin_setup(void)
 {
 	struct cli_scrn *scrn = this_scrn;
-	struct termios term;
-
 	if (!scrn)
 		return -1;
-
-	scrn_set_io(stdin, stdout);
+#ifdef CONFIG_TELNET_CLI
+	int fd = get_cli_socket_fd();
+	scrn_set_io(fd, fd);
+	cli_sa_accept(fd);
+	cli_send_welcome_banner(fd);
+#else
+	struct termios term;
+	scrn_set_io(fileno(stdin), fileno(stdout));
 
 	memset(&scrn->oldterm, 0, sizeof(term));
-	if (tcgetattr(fileno(scrn->fd_in), &scrn->oldterm) ||
-	    tcgetattr(fileno(scrn->fd_in), &term)) {
+	if (tcgetattr(scrn->fd_in, &scrn->oldterm) ||
+	    tcgetattr(scrn->fd_in, &term)) {
 		fprintf(stderr, "%s: setup failed for tty\n", __func__);
 		return -1;
 	}
-
 	term.c_lflag &= ~(ICANON | ECHO | ISIG | IEXTEN);
 
-	if (tcsetattr(fileno(scrn->fd_in), TCSANOW, &term)) {
+	if (tcsetattr((scrn->fd_in), TCSANOW, &term)) {
 		fprintf(stderr, "%s: failed to set tty\n", __func__);
 		return -1;
 	}
-
+#endif
 	return 0;
 }
 
@@ -126,12 +176,13 @@ scrn_stdin_restore(void)
 
 	if (!scrn)
 		return;
-
-	if (tcsetattr(fileno(scrn->fd_in), TCSANOW, &scrn->oldterm))
+#ifndef CONFIG_TELNET_CLI
+	if (tcsetattr((scrn->fd_in), TCSANOW, &scrn->oldterm))
 		fprintf(stderr, "%s: failed to set tty\n", __func__);
 
 	if (system("stty sane"))
 		fprintf(stderr, "%s: system command failed\n", __func__);
+#endif
 }
 
 static void

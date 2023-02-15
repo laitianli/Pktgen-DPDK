@@ -253,9 +253,22 @@ scrn_cmd(int argc __rte_unused, char **argv __rte_unused)
 static int
 quit_cmd(int argc __rte_unused, char **argv __rte_unused)
 {
+#ifdef CONFIG_TELNET_CLI
+	cli_quit_telnet_server();
+#endif
 	cli_quit();
 	return 0;
 }
+
+#ifdef CONFIG_TELNET_CLI
+static int
+exit_cmd(int argc __rte_unused, char **argv __rte_unused)
+{
+	cli_quit();
+	cli_close_telnet_fd();
+	return 0;
+}
+#endif
 
 static int
 hist_cmd(int argc, char **argv)
@@ -315,7 +328,7 @@ more_cmd(int argc, char **argv)
 		cli_file_close(node);
 	}
 
-	cli_printf("\n");
+	cli_printf("\r\n");
 
 	return 0;
 }
@@ -677,6 +690,9 @@ c_cmd("version",    version_cmd,"Display version information"),
 /* The following are environment variables */
 c_str("SHELL",      NULL,       "CLI shell"),
 c_str("DPDK_VER",   ver_cmd,	""),
+#ifdef CONFIG_TELNET_CLI
+c_cmd("exit",       exit_cmd,   "exit # exit the telent client"),
+#endif
 c_end()
 };
 
