@@ -531,14 +531,11 @@ pktgen_packet_ctor(port_info_t *info, int32_t seq_idx, int32_t type)
 			}
 		} else if (pkt->ipProto == PG_IPPROTO_ICMP) {
 			struct pg_ipv4_hdr *ipv4;
-			struct pg_udp_hdr *udp;
 			struct pg_icmp_hdr *icmp;
 			uint16_t tlen;
 
 			/* Start from Ethernet header */
 			ipv4 = (struct pg_ipv4_hdr *)l3_hdr;
-			udp = (struct pg_udp_hdr *)&ipv4[1];
-
 			/* Create the ICMP header */
 			ipv4->src_addr = htonl(pkt->ip_src_addr.addr.ipv4.s_addr);
 			ipv4->dst_addr = htonl(pkt->ip_dst_addr.addr.ipv4.s_addr);
@@ -547,10 +544,10 @@ pktgen_packet_ctor(port_info_t *info, int32_t seq_idx, int32_t type)
 			ipv4->total_length = htons(tlen);
 			ipv4->next_proto_id = pkt->ipProto;
 
-			icmp = (struct pg_icmp_hdr *)&udp[1];
+			icmp = (struct pg_icmp_hdr *)&ipv4[1];
 			icmp->icmp_code = 0;
-			if ( (type == -1) || (type == ICMP4_TIMESTAMP)) {
-				union icmp_data *data = (union icmp_data *)&udp[1];
+			if (/* (type == -1) || */(type == ICMP4_TIMESTAMP)) {
+				union icmp_data *data = (union icmp_data *)&icmp[1];
 
 				icmp->icmp_type = ICMP4_TIMESTAMP;
 				data->timestamp.ident = 0x1234;
@@ -558,18 +555,22 @@ pktgen_packet_ctor(port_info_t *info, int32_t seq_idx, int32_t type)
 				data->timestamp.originate = 0x80004321;
 				data->timestamp.receive = 0;
 				data->timestamp.transmit = 0;
-			} else if (type == ICMP4_ECHO) {
-				union icmp_data *data = (union icmp_data *)&udp[1];
-
+			} else if ((type == -1) || (type == ICMP4_ECHO)) {
+				static unsigned short seq = 1;
+				union icmp_data *data = (union icmp_data *)&icmp[1];
 				icmp->icmp_type = ICMP4_ECHO;
 				data->echo.ident = 0x1234;
-				data->echo.seq = 0x5678;
+				data->echo.seq = htons(seq);
 				data->echo.data = 0;
+				icmp->icmp_ident = htons(data->echo.ident);
+				icmp->icmp_seq_nb = htons(seq);
+				seq ++;
 			}
 			icmp->icmp_cksum     = 0;
 			/* ICMP4_TIMESTAMP_SIZE */
 			tlen            = pkt->pktSize - (pkt->ether_hdr_size + sizeof(struct pg_ipv4_hdr));
 			icmp->icmp_cksum	= rte_raw_cksum(icmp, tlen);
+			icmp->icmp_cksum = (~icmp->icmp_cksum) & 0xffff;
 			if (icmp->icmp_cksum == 0)
 				icmp->icmp_cksum = 0xFFFF;
 
@@ -1616,3 +1617,9 @@ rte_timer_setup(void)
 	CPU_SET(rte_get_master_lcore(), cpuset);
 	pthread_setaffinity_np(tid, sizeof(cpuset), cpuset);
 }
+void
+cli_timer_stop(void)
+{
+	pktgen.timer_running = 0;
+}
+

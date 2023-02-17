@@ -386,6 +386,7 @@ void pktgen_input_start(void);
 void stat_timer_dump(void);
 void stat_timer_clear(void);
 void rte_timer_setup(void);
+void cli_timer_stop(void);
 
 typedef struct {
 	uint64_t timestamp;

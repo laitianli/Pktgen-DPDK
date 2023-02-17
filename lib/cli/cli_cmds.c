@@ -268,6 +268,21 @@ exit_cmd(int argc __rte_unused, char **argv __rte_unused)
 	cli_close_telnet_fd();
 	return 0;
 }
+static int
+timer_setup_cmd(int argc __rte_unused, char **argv __rte_unused)
+{
+	rte_timer_setup();
+	return 0;
+}
+static int
+timer_stop_cmd(int argc __rte_unused, char **argv __rte_unused)
+{
+	cli_timer_stop();
+	return 0;
+}
+
+
+
 #endif
 
 static int
@@ -692,6 +707,9 @@ c_str("SHELL",      NULL,       "CLI shell"),
 c_str("DPDK_VER",   ver_cmd,	""),
 #ifdef CONFIG_TELNET_CLI
 c_cmd("exit",       exit_cmd,   "exit # exit the telent client"),
+c_cmd("timer_setup",       timer_setup_cmd,   "timer_setup # open timer to show main page"),
+c_cmd("timer_stop",       timer_stop_cmd,   "timer_stop # stop timer to show main page"),
+
 #endif
 c_end()
 };
